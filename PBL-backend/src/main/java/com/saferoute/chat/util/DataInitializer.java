@@ -41,8 +41,9 @@ public class DataInitializer implements CommandLineRunner {
     }
 
     @Override
-    public void run(String... args) throws Exception {
-        if (userRepository.count() > 0) {
+    public void run(String... args) {
+        try {
+            if (userRepository.count() > 0) {
             log.info("MongoDB database already initialized. Resetting stale online states to offline on startup...");
             userRepository.findAll().forEach(u -> {
                 if (Boolean.TRUE.equals(u.getOnline())) {
@@ -141,5 +142,8 @@ public class DataInitializer implements CommandLineRunner {
                 .build());
 
         log.info("Development database seeding into MongoDB completed successfully.");
+        } catch (Exception ex) {
+            log.error("Error in DataInitializer (database connection or seeding): {}", ex.getMessage(), ex);
+        }
     }
 }
