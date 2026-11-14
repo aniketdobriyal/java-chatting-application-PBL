@@ -9,7 +9,7 @@ export const ConversationList = ({ filter = 'all' }) => {
   const { conversations, activeConversation, selectConversation, isLoadingConversations } = useChat();
   const { user } = useAuth();
 
-  if (isLoadingConversations) {
+  if (isLoadingConversations && conversations.length === 0) {
     return <LoadingSpinner label="Loading conversations..." className="py-12" />;
   }
 

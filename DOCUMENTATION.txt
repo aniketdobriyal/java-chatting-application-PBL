@@ -1,0 +1,552 @@
+================================================================================
+SAFEROUTE CHAT — COMPLETE SYSTEM & ARCHITECTURAL DOCUMENTATION
+Full-Stack End-to-End Encrypted Real-Time Messaging Platform
+================================================================================
+
+1. EXECUTIVE SUMMARY & SYSTEM OVERVIEW
+--------------------------------------------------------------------------------
+SafeRoute Chat is a high-security, full-stack real-time messaging application
+designed around zero-knowledge principles and end-to-end encryption (E2EE).
+
+All message contents are encrypted directly inside the sender's web browser using
+authenticated symmetric encryption (AES-256-GCM) with session keys negotiated via
+Elliptic Curve Diffie-Hellman (ECDH on NIST P-256).
+
+The server (Spring Boot 3) and database (MongoDB) only ever store and relay
+ciphertext, nonces, and cryptographic metadata. Plaintext messages NEVER leave
+the client machine.
+
+In addition to military-grade cryptographic privacy, the platform provides:
+- Live real-time online/offline presence tracking via WebSocket session lifecycle.
+- Full user profile management (avatar gallery/generator, status messages/bio,
+  online visibility, and password management).
+- Instant live updates across all connected clients via WebSocket STOMP topics.
+- Multi-client real-time synchronization, unread counters, and read receipts.
+
+
+2. TECHNOLOGY STACK
+--------------------------------------------------------------------------------
+Layer                   Technology
+--------------------------------------------------------------------------------
+Frontend Framework      React 19, Vite 8, React Router DOM 7
+UI & Styling            Tailwind CSS 4, Lucide React Icons
+Cryptographic Engine    Web Crypto API (SubtleCrypto: ECDH P-256, AES-256-GCM)
+Key Storage (Client)    Browser IndexedDB (isolated from LocalStorage)
+Real-Time Messaging     STOMP over WebSocket (@stomp/stompjs 7)
+HTTP Client             Axios with JWT request/response interceptors
+Backend Framework       Spring Boot 3.2.4 (Java 17 / Java 25 compatible)
+Security & Auth         Spring Security 6, JJWT 0.11.5, BCrypt
+Database                MongoDB / MongoDB Atlas (Spring Data MongoDB)
+Build & Tooling         Apache Maven 3.9+, Node.js / NPM, Oxlint, Vitest
+
+
+3. FULL SYSTEM ARCHITECTURE & DATA FLOW
+--------------------------------------------------------------------------------
+
+[ User A Browser ]                                    [ User B Browser ]
+       |                                                      |
+ 1. Generate ECDH P-256 Keypair                        1. Generate ECDH P-256 Keypair
+ 2. Private Key -> IndexedDB (Local only)              2. Private Key -> IndexedDB (Local only)
+ 3. Public Key (SPKI) -> Server DB                     3. Public Key (SPKI) -> Server DB
+       |                                                      |
+       |============= Shared Secret Negotiation ==============|
+       | Derive AES-256-GCM Key (User A PrivKey + User B PubKey)
+       |                                                      |
+ 4. Encrypt Plaintext with AES-GCM + 96-bit random nonce      |
+ 5. Send Payload: { ciphertext, nonce, algo }                 |
+       |                                                      |
+       v                                                      |
+ [ Spring Boot Backend / WebSocket Broker / MongoDB ]         |
+  - Validates JWT & participant membership                    |
+  - Persists ciphertext in MongoDB users/messages collection   |
+  - Relays ciphertext to /topic/conversations/{convId}        |
+  - Relays ciphertext to /topic/users/{userBId}/messages      |
+       |                                                      |
+       +----------------------------------------------------->+
+                                                  6. Receive ciphertext & nonce
+                                                  7. Derive identical AES-256-GCM Key
+                                                     (User B PrivKey + User A PubKey)
+                                                  8. Decrypt ciphertext -> Plaintext
+
+
+4. CLIENT-SIDE END-TO-END ENCRYPTION (E2EE) IN DETAIL
+--------------------------------------------------------------------------------
+
+A. Key Generation & Local Storage (crypto.js):
+   - Algorithm: ECDH (Elliptic Curve Diffie-Hellman)
+   - Curve: NIST P-256 (secp256r1)
+   - Generated using: window.crypto.subtle.generateKey()
+   - Private Key: Retained exclusively inside client-side IndexedDB ('chat_e2ee_db').
+     It is NEVER transmitted over HTTP or WebSockets.
+   - Public Key: Exported to Base64 SPKI format and stored in the user's backend profile.
+
+B. Key Derivation (Diffie-Hellman Key Agreement):
+   - When Alice starts a chat with Bob, Alice's browser takes her private key and Bob's
+     public key, and calls window.crypto.subtle.deriveKey().
+   - Result: A 256-bit AES-GCM symmetric key unique to this pair of users.
+   - When Bob decrypts Alice's messages, Bob's browser takes his private key and Alice's
+     public key, deriving the exact same 256-bit AES-GCM key.
+   - Keys are non-extractable in browser memory and cached per session.
+
+C. Encryption & Transmission:
+   - Cipher: AES-256-GCM (Galois/Counter Mode).
+   - IV/Nonce: 96-bit (12 bytes) cryptographically random bytes generated via
+     window.crypto.getRandomValues().
+   - Authenticated Data (AEAD): The GCM tag is appended to the ciphertext buffer,
+     protecting against tampering and bit-flipping attacks.
+   - Encrypted output is Base64 encoded before dispatch to the REST API or WebSocket.
+
+D. Decryption & Verification:
+   - When an incoming message arrives, decryptMessage() validates the authentication tag.
+   - If the ciphertext or nonce has been altered in transit or in the database,
+     decryption immediately fails with an authentication error.
+
+E. Zero-Knowledge Server Guarantee:
+   - The Spring Boot Message entity does NOT have a "content" or "plaintext" field.
+   - Database documents store ONLY:
+     {
+       "conversationId": "...",
+       "senderId": "...",
+       "receiverId": "...",
+       "ciphertext": "...",
+       "nonce": "...",
+       "algorithm": "AES-256-GCM",
+       "encryptionVersion": 1,
+       "read": false,
+       "timestamp": "..."
+     }
+
+
+5. REAL-TIME PRESENCE & ONLINE STATUS SYSTEM
+--------------------------------------------------------------------------------
+
+A. WebSocket Connection Lifecycle:
+   - The frontend connects to the STOMP broker at /ws upon user login.
+   - In WebSocketConfig, the CONNECT frame requires a valid "Authorization: Bearer <jwt>"
+     header, setting the authenticated Principal in the session.
+   - WebSocketEventListener tracks connected sessions using thread-safe maps:
+     * userSessionMap: Map<Email, Set<SessionId>>
+     * sessionUserMap: Map<SessionId, Email>
+
+B. Automatic Status Updates:
+   - On SessionConnectedEvent:
+     * Active session count increments.
+     * User's database record is set to online = true, updatedAt = now.
+     * A PresenceEvent is broadcast to /topic/presence:
+       {
+         "userId": "...",
+         "email": "...",
+         "online": true,
+         "statusMessage": "...",
+         "timestamp": "..."
+       }
+   - On SessionDisconnectEvent:
+     * The disconnecting sessionId is removed.
+     * When a user has 0 remaining active sessions across all devices/tabs:
+       - User's database record is updated to online = false.
+       - A PresenceEvent is broadcast to /topic/presence with online = false.
+
+C. Explicit Logout REST Endpoint:
+   - POST /api/auth/logout:
+     * Authenticated endpoint called when the user clicks Sign Out.
+     * Sets user's online state to false in MongoDB.
+     * Broadcasts presence update to /topic/presence.
+     * Clears local user state and cryptographic memory cache.
+
+D. Frontend Live Presence Subscriptions:
+   - ChatContext maintains an open subscription to /topic/presence.
+   - Whenever any user goes online/offline or updates their status message,
+     the conversation list, active chat header, and search results update
+     immediately in the DOM without requiring a page refresh.
+
+
+6. PROFILE SETTINGS & LIVE BROADCAST
+--------------------------------------------------------------------------------
+
+A. Profile Features in ProfileModal.jsx:
+   1. Avatar Customization:
+      - Live avatar preview with presence badge.
+      - 8 curated preset avatar portraits.
+      - "Generate Random Avatar" button producing unique Dicebear SVG avatars.
+      - Custom image URL support with real-time validation and error fallbacks.
+   2. Display Name:
+      - Editable name field (2 to 50 characters) with real-time validation.
+   3. Bio & Status Message:
+      - Custom status message input (up to 150 characters).
+      - Quick preset chips ("Available", "At work", "Coding", "Busy", "Away", etc.).
+   4. Online Visibility Toggle:
+      - "Online": Active and visible to everyone.
+      - "Invisible": Appear offline to other contacts.
+   5. Security & Encryption Tab:
+      - Displays active E2EE status (AES-256-GCM + ECDH P-256).
+      - Displays current user's SPKI public key with one-click copy.
+      - Change Password form (Current Password verification + 6+ char new password).
+
+B. Backend Endpoints:
+   - GET /api/users/me:
+     Returns current user profile DTO.
+   - PUT /api/users/me/profile:
+     Updates name, avatar, statusMessage, and online flag.
+     Broadcasts a ProfileUpdateEvent to /topic/users/profile.
+   - PUT /api/users/me/status:
+     Updates statusMessage and online flag.
+     Broadcasts a PresenceEvent to /topic/presence.
+   - PUT /api/users/me/password:
+     Validates current password against BCrypt hash, updates to new BCrypt hash.
+
+C. Live Profile Broadcast:
+   - All connected clients are subscribed to /topic/users/profile.
+   - When any user edits their name, avatar, or bio:
+     * Every conversation in the sidebar featuring that user updates immediately.
+     * If that conversation is active, the chat header updates live.
+     * If the current user updated their own profile, AuthContext and LocalStorage
+       sync seamlessly with toast feedback.
+
+
+7. REAL-TIME MESSAGING & NOTIFICATIONS
+--------------------------------------------------------------------------------
+
+A. STOMP Topics & Destinations:
+   - /topic/conversations/{conversationId}:
+     Carries new messages for a specific conversation.
+     Authorized only for conversation participants.
+   - /topic/users/{userId}/messages:
+     Private destination for user notifications.
+     Whenever a message is sent, both sender and receiver receive the event here.
+     Allows conversations to move to the top of the sidebar and increment unread
+     badges in real time, even if the user does not currently have that chat open.
+   - /topic/users/{userId}/read:
+     Carries read receipt events ({ conversationId, readerId, readAt }).
+     Updates checkmarks in real time (from single check to double check).
+   - /topic/presence:
+     Public broadcast of online/offline status and presence changes.
+   - /topic/users/profile:
+     Public broadcast of profile edits (name, avatar, status message).
+
+B. Read Receipts:
+   - When a user opens an unread conversation, PATCH /api/conversations/{id}/read
+     is called.
+   - The backend marks unread messages as read: true and broadcasts the read receipt.
+   - Outgoing messages on the sender's screen immediately switch to blue double checks.
+
+
+8. REST API SPECIFICATION
+--------------------------------------------------------------------------------
+
+Authentication Endpoints:
+- POST /api/auth/register
+  Request Body:
+  {
+    "name": "Jane Doe",
+    "email": "jane@example.com",
+    "password": "password123",
+    "publicKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQc..." (optional SPKI)
+  }
+  Response: 201 Created -> { "token": "jwt...", "user": { ... } }
+
+- POST /api/auth/login
+  Request Body: { "email": "jane@example.com", "password": "password123" }
+  Response: 200 OK -> { "token": "jwt...", "user": { ... } }
+
+- POST /api/auth/logout
+  Headers: Authorization: Bearer <jwt>
+  Response: 200 OK -> { "success": true, "message": "Logged out successfully" }
+
+User & Profile Endpoints:
+- GET /api/users
+  Headers: Authorization: Bearer <jwt>
+  Response: 200 OK -> Array of UserResponse (excluding self)
+
+- GET /api/users/me
+  Headers: Authorization: Bearer <jwt>
+  Response: 200 OK -> Current user UserResponse
+
+- GET /api/users/search?q={query}
+  Headers: Authorization: Bearer <jwt>
+  Response: 200 OK -> Array of UserResponse matching query
+
+- PUT /api/users/me/profile
+  Headers: Authorization: Bearer <jwt>
+  Request Body:
+  {
+    "name": "Jane Doe",
+    "avatar": "https://...",
+    "statusMessage": "Coding non-stop 🚀",
+    "online": true
+  }
+  Response: 200 OK -> Updated UserResponse
+
+- PUT /api/users/me/status
+  Headers: Authorization: Bearer <jwt>
+  Request Body: { "online": true, "statusMessage": "In a meeting" }
+  Response: 200 OK -> Updated UserResponse
+
+- PUT /api/users/me/password
+  Headers: Authorization: Bearer <jwt>
+  Request Body: { "currentPassword": "oldPassword", "newPassword": "newPassword123" }
+  Response: 200 OK -> { "success": true, "message": "Password updated successfully" }
+
+- PUT /api/users/me/public-key
+  Headers: Authorization: Bearer <jwt>
+  Request Body: { "publicKey": "MFkwEwYHKoZIzj0CAQY..." }
+  Response: 200 OK -> Updated UserResponse
+
+Conversation & Message Endpoints:
+- GET /api/conversations
+  Headers: Authorization: Bearer <jwt>
+  Response: 200 OK -> Array of ConversationResponse with lastMessage and unreadCount
+
+- POST /api/conversations
+  Headers: Authorization: Bearer <jwt>
+  Request Body: { "recipientId": "userId123" }
+  Response: 200 OK -> ConversationResponse (finds existing or creates new)
+
+- GET /api/conversations/{id}/messages?page=0&size=100
+  Headers: Authorization: Bearer <jwt>
+  Response: 200 OK -> Array of MessageResponse (ciphertext + nonces)
+
+- POST /api/conversations/{id}/messages
+  Headers: Authorization: Bearer <jwt>
+  Request Body:
+  {
+    "ciphertext": "Base64EncryptedBytes...",
+    "nonce": "Base64Nonce12Bytes...",
+    "algorithm": "AES-256-GCM",
+    "encryptionVersion": 1,
+    "receiverId": "targetUserId"
+  }
+  Response: 200 OK -> MessageResponse
+
+- PATCH /api/conversations/{id}/read
+  Headers: Authorization: Bearer <jwt>
+  Response: 200 OK -> { "success": true, "conversationId": "...", "updatedCount": N }
+
+
+9. MONGODB DOCUMENT SCHEMAS
+--------------------------------------------------------------------------------
+
+Collection: users
+{
+  "_id": ObjectId("..."),
+  "name": "Aniket Dobriyal",
+  "email": "aniket@example.com",
+  "password": "$2a$10$hashedPassword...",
+  "avatar": "https://images.unsplash.com/...",
+  "online": true,
+  "statusMessage": "Building real-time secure chat 🚀",
+  "publicKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE...",
+  "createdAt": ISODate("2026-11-01T..."),
+  "updatedAt": ISODate("2026-11-01T...")
+}
+
+Collection: conversations
+{
+  "_id": ObjectId("..."),
+  "participantIds": ["userId1", "userId2"],
+  "createdAt": ISODate("2026-11-01T..."),
+  "updatedAt": ISODate("2026-11-01T...")
+}
+
+Collection: conversation_participants
+{
+  "_id": ObjectId("..."),
+  "conversationId": "convId123",
+  "userId": "userId1",
+  "joinedAt": ISODate("2026-11-01T...")
+}
+
+Collection: messages
+{
+  "_id": ObjectId("..."),
+  "conversationId": "convId123",
+  "senderId": "userId1",
+  "receiverId": "userId2",
+  "ciphertext": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "nonce": "dGVzdC1ub25jZQ==",
+  "algorithm": "AES-256-GCM",
+  "encryptionVersion": 1,
+  "read": true,
+  "timestamp": ISODate("2026-11-01T...")
+}
+
+
+10. SECURITY INVARIANTS & HARDENING PROPERTIES
+--------------------------------------------------------------------------------
+1. Zero Plaintext Exposure:
+   The backend never accepts, processes, logs, or stores plaintext message strings.
+2. In-Memory Key Isolation:
+   Derived AES-256-GCM conversation keys are non-extractable CryptoKey objects in browser
+   RAM, cleared immediately upon user logout via clearKeyCache().
+3. Nonce Collision Defense:
+   Every single message generates a cryptographically random 96-bit nonce using
+   window.crypto.getRandomValues(). Nonces are never reused.
+4. Tampering & Man-in-the-Middle Protection:
+   AES-GCM computes an authentication tag over the ciphertext. If any byte is altered
+   by the server or network, decryption fails with an authentication tag error.
+5. Brute Force Protection:
+   LoginRateLimiter enforces a sliding window blocking IP/email combinations after 5
+   consecutive failed attempts.
+6. Topic Subscription Authorization:
+   WebSocketConfig ChannelInterceptor checks JWT on CONNECT, verifies conversation
+   membership on SUBSCRIBE to conversation topics, and blocks cross-user destination access.
+
+
+11. SETUP, BUILD & EXECUTION GUIDE
+--------------------------------------------------------------------------------
+
+A. Prerequisites:
+   - Java Development Kit (JDK) 17 or higher
+   - Apache Maven 3.9+
+   - Node.js 18+ and NPM
+   - MongoDB (Local instance at mongodb://localhost:27017 or MongoDB Atlas connection URI)
+
+B. Environment Configuration:
+   1. Frontend (.env in project root):
+      VITE_USE_MOCK=false
+      VITE_API_BASE_URL=http://localhost:8080/api
+
+   2. Backend (PBL-backend/src/main/resources/application.yml or environment variables):
+      server:
+        port: 8080
+      spring:
+        data:
+          mongodb:
+            uri: ${MONGODB_URI:mongodb://localhost:27017/chat_app}
+            database: ${MONGODB_DATABASE:chat_app}
+      jwt:
+        secret: ${JWT_SECRET:404E635266556A586E3272357538782F413F4428472B4B6250655368566D5971}
+        expiration: ${JWT_EXPIRATION:86400000}
+
+C. Running the Application:
+   1. Backend:
+      cd PBL-backend
+      mvn clean package -DskipTests
+      java -jar target/chat-backend-0.0.1-SNAPSHOT.jar
+      (Runs on http://localhost:8080)
+
+   2. Frontend:
+      npm install
+      npm run dev
+      (Runs on http://localhost:5173)
+
+D. Running Tests:
+   1. Frontend Vitest Tests:
+      npm test
+      (Executes crypto unit tests: key derivation, nonce randomness, AES-GCM round-trips)
+
+   2. Backend JUnit Tests:
+      mvn test -f PBL-backend/pom.xml
+      (Executes 15 security invariant tests: BCrypt salt verification, rate limiter,
+       ciphertext purity, duplicate email normalization)
+
+   3. Frontend Linter & Build:
+      npm run lint
+      npm run build
+
+
+12. DIRECTORY TREE OF REPOSITORY
+--------------------------------------------------------------------------------
+PBL/
+├── DOCUMENTATION.txt                  # Complete system documentation (this file)
+├── README.md                          # Quick start and overview
+├── .env                               # Frontend environment variables
+├── .env.example                       # Example frontend environment
+├── package.json                       # Node dependencies and scripts
+├── vite.config.js                     # Vite build configuration
+├── src/
+│   ├── App.jsx                        # Application root routes
+│   ├── main.jsx                       # React DOM entry point
+│   ├── index.css                      # Tailwind stylesheet
+│   ├── components/
+│   │   ├── chat/
+│   │   │   ├── ChatHeader.jsx         # Contact metadata, live presence, E2EE badge
+│   │   │   ├── ConversationItem.jsx   # Contact preview, unread badge, lock badge
+│   │   │   ├── ConversationList.jsx   # List of active conversations with filter tabs
+│   │   │   ├── EmptyChat.jsx          # Welcome illustration when no chat is open
+│   │   │   ├── MessageBubble.jsx      # E2EE lock indicator, read status checkmarks
+│   │   │   ├── MessageInput.jsx       # E2EE warning banner, send message input
+│   │   │   ├── MessageList.jsx        # Grouped message feed with auto-scroll
+│   │   │   ├── ProfileModal.jsx       # Profile settings dialog (avatar, bio, presence, pwd)
+│   │   │   ├── Sidebar.jsx            # Current user info, search bar, settings button
+│   │   │   └── UserSearch.jsx         # User directory search results with status
+│   │   ├── common/
+│   │   │   ├── Avatar.jsx             # Dynamic avatar with online indicator badge
+│   │   │   ├── ErrorMessage.jsx       # Standard alert banner
+│   │   │   ├── LoadingSpinner.jsx     # Centered loading spinner
+│   │   │   └── Toast.jsx              # Floating notification toast
+│   │   └── routes/
+│   │       └── ProtectedRoute.jsx     # Redirects unauthenticated users to /login
+│   ├── context/
+│   │   ├── AuthContext.jsx            # Session state, login, register, logout, profile update
+│   │   └── ChatContext.jsx            # STOMP client, presence listener, E2EE encrypt/decrypt
+│   ├── hooks/
+│   │   ├── useAuth.js                 # Hook for AuthContext
+│   │   └── useChat.js                 # Hook for ChatContext
+│   ├── pages/
+│   │   ├── Chat.jsx                   # Main split-pane chat interface
+│   │   ├── Login.jsx                  # Sign in screen with credential autofill
+│   │   └── Register.jsx               # Sign up screen with password confirmation
+│   ├── services/
+│   │   ├── api.js                     # Centralized Axios client with JWT interceptors
+│   │   ├── authService.js             # Authentication service & initial key sync
+│   │   ├── chatService.js             # Conversations & encrypted message API calls
+│   │   └── userService.js             # User search, profile updates, and password updates
+│   └── utils/
+│       ├── crypto.js                  # Web Crypto API engine (ECDH P-256 + AES-256-GCM)
+│       ├── crypto.test.js             # Cryptographic unit tests (Vitest)
+│       ├── dateUtils.js               # Time formatting & date divider utilities
+│       └── mockData.js                # Mock data fallback for offline development
+│
+└── PBL-backend/                       # Spring Boot 3 Backend
+    ├── pom.xml                        # Maven dependencies & build configuration
+    └── src/
+        ├── main/
+        │   ├── java/com/saferoute/chat/
+        │   │   ├── ChatApplication.java           # Spring Boot application entry point
+        │   │   ├── config/
+        │   │   │   ├── CorsConfig.java            # Global CORS policy
+        │   │   │   ├── WebSocketConfig.java       # STOMP broker & subscription interceptors
+        │   │   │   └── WebSocketEventListener.java# Connect/disconnect presence events
+        │   │   ├── controller/
+        │   │   │   ├── AuthController.java        # Register, login, logout
+        │   │   │   ├── ConversationController.java# Conversation management & read receipts
+        │   │   │   ├── MessageController.java     # Paginated message history & sending
+        │   │   │   ├── UserController.java        # Search, profile, status, password update
+        │   │   │   └── WebSocketChatController.java# WebSocket message handling
+        │   │   ├── dto/
+        │   │   │   ├── auth/                      # Login, Register, AuthResponse
+        │   │   │   ├── conversation/              # Conversation response & request
+        │   │   │   ├── message/                   # Send message request & response
+        │   │   │   └── user/                      # Profile, Password, Presence, UserResponse
+        │   │   ├── entity/
+        │   │   │   ├── Conversation.java          # Conversation MongoDB document
+        │   │   │   ├── ConversationParticipant.java# Participant link document
+        │   │   │   ├── Message.java               # Ciphertext MongoDB document (NO plaintext)
+        │   │   │   └── User.java                  # User MongoDB document (with SPKI public key)
+        │   │   ├── exception/
+        │   │   │   ├── BadRequestException.java
+        │   │   │   ├── GlobalExceptionHandler.java# Centralized REST error responses
+        │   │   │   ├── ResourceNotFoundException.java
+        │   │   │   └── UnauthorizedException.java
+        │   │   ├── repository/                    # Spring Data MongoRepository interfaces
+        │   │   ├── security/
+        │   │   │   ├── CustomUserDetailsService.java
+        │   │   │   ├── JwtAuthenticationFilter.java# Bearer token validation filter
+        │   │   │   ├── JwtService.java            # Token signing & claim verification
+        │   │   │   ├── LoginRateLimiter.java      # Sliding window brute-force protection
+        │   │   │   └── SecurityConfig.java        # Security filter chain configuration
+        │   │   ├── service/
+        │   │   │   ├── AuthService.java           # Authentication & session dispatch
+        │   │   │   ├── ConversationService.java   # Thread orchestration & unread counts
+        │   │   │   ├── MessageService.java        # Message persistence & STOMP dispatch
+        │   │   │   └── UserService.java           # User profile & presence services
+        │   │   └── util/
+        │   │       └── DataInitializer.java       # Default seed accounts & threads
+        │   └── resources/
+        │       └── application.yml                # Configuration properties
+        └── test/
+            └── java/com/saferoute/chat/
+                └── SecurityTests.java             # 15 security & cryptographic contract tests
+================================================================================
+END OF DOCUMENTATION
+================================================================================

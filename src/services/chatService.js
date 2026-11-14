@@ -1,5 +1,5 @@
 import api from './api';
-import { INITIAL_CONVERSATIONS, INITIAL_MESSAGES, MOCK_USERS } from '../utils/mockData';
+import { INITIAL_CONVERSATIONS, INITIAL_MESSAGES } from '../utils/mockData';
 
 const USE_MOCK = import.meta.env.VITE_USE_MOCK !== 'false';
 const delay = (ms = 300) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -10,8 +10,8 @@ const getStoredConversations = () => {
   if (stored) {
     try {
       return JSON.parse(stored);
-    } catch (e) {
-      // Fallback if parse fails
+    } catch (_e) {
+      // Fallback
     }
   }
   localStorage.setItem('mock_conversations', JSON.stringify(INITIAL_CONVERSATIONS));
@@ -23,8 +23,8 @@ const getStoredMessages = () => {
   if (stored) {
     try {
       return JSON.parse(stored);
-    } catch (e) {
-      // Fallback if parse fails
+    } catch (_e) {
+      // Fallback
     }
   }
   localStorage.setItem('mock_messages', JSON.stringify(INITIAL_MESSAGES));
@@ -55,14 +55,13 @@ export const chatService = {
       await delay(300);
       const conversations = getStoredConversations();
       
-      const existing = conversations.find((c) => c.participant.id === targetUser.id);
+      const existing = conversations.find((c) => c.participant?.id === targetUser.id);
       if (existing) {
         return existing;
       }
 
-      // Create new mock conversation
       const newConversation = {
-        id: Date.now(),
+        id: 'mock_conv_' + Date.now(),
         participant: {
           id: targetUser.id,
           name: targetUser.name,
@@ -70,6 +69,7 @@ export const chatService = {
           avatar: targetUser.avatar,
           online: targetUser.online ?? true,
           statusMessage: targetUser.statusMessage || 'Available',
+          publicKey: targetUser.publicKey || null,
         },
         lastMessage: null,
         unreadCount: 0,
@@ -78,7 +78,6 @@ export const chatService = {
       const updatedConversations = [newConversation, ...conversations];
       localStorage.setItem('mock_conversations', JSON.stringify(updatedConversations));
 
-      // Initialize empty messages thread
       const messagesMap = getStoredMessages();
       messagesMap[newConversation.id] = [];
       localStorage.setItem('mock_messages', JSON.stringify(messagesMap));
@@ -92,45 +91,49 @@ export const chatService = {
 
   /**
    * Get messages history for a conversation
-   * REST Endpoint: GET /api/conversations/{conversationId}/messages
+   * REST Endpoint: GET /api/conversations/{conversationId}/messages?page=0&size=100
    */
-  getMessages: async (conversationId) => {
+  getMessages: async (conversationId, page = 0, size = 100) => {
     if (USE_MOCK) {
       await delay(250);
       const messagesMap = getStoredMessages();
       return messagesMap[conversationId] || [];
     }
 
-    const response = await api.get(`/conversations/${conversationId}/messages`);
+    const response = await api.get(`/conversations/${conversationId}/messages`, {
+      params: { page, size },
+    });
     return response.data;
   },
 
   /**
-   * Send a new message
+   * Send an encrypted E2EE message
    * REST Endpoint: POST /api/conversations/{conversationId}/messages
+   * Payload transmits ONLY ciphertext and encryption metadata.
    */
-  sendMessage: async (conversationId, senderId, receiverId, content) => {
+  sendMessage: async (conversationId, receiverId, encryptedPayload) => {
     if (USE_MOCK) {
       await delay(200);
 
       const newMessage = {
-        id: Date.now(),
+        id: 'mock_msg_' + Date.now(),
         conversationId,
-        senderId,
+        senderId: 'mock_self',
         receiverId,
-        content: content.trim(),
+        ciphertext: encryptedPayload.ciphertext,
+        nonce: encryptedPayload.nonce,
+        algorithm: encryptedPayload.algorithm || 'AES-256-GCM',
+        encryptionVersion: encryptedPayload.encryptionVersion || 1,
         timestamp: new Date().toISOString(),
         read: true,
       };
 
-      // 1. Update message store
       const messagesMap = getStoredMessages();
       const currentList = messagesMap[conversationId] || [];
       const updatedList = [...currentList, newMessage];
       messagesMap[conversationId] = updatedList;
       localStorage.setItem('mock_messages', JSON.stringify(messagesMap));
 
-      // 2. Update conversation lastMessage & order
       const conversations = getStoredConversations();
       const updatedConversations = conversations.map((c) => {
         if (c.id === conversationId) {
@@ -142,7 +145,6 @@ export const chatService = {
         return c;
       });
 
-      // Move active conversation to top of list
       const targetIndex = updatedConversations.findIndex((c) => c.id === conversationId);
       if (targetIndex > 0) {
         const [targetConv] = updatedConversations.splice(targetIndex, 1);
@@ -155,7 +157,10 @@ export const chatService = {
     }
 
     const response = await api.post(`/conversations/${conversationId}/messages`, {
-      content,
+      ciphertext: encryptedPayload.ciphertext,
+      nonce: encryptedPayload.nonce,
+      algorithm: encryptedPayload.algorithm,
+      encryptionVersion: encryptedPayload.encryptionVersion,
       receiverId,
     });
     return response.data;

@@ -1,3 +1,15 @@
+# Environment variables and secrets
+.env
+.env.local
+.env.*.local
+.vercel
+
+# Backend build and data
+PBL-backend/target/
+PBL-backend/data/
+PBL-backend/.env
+PBL-backend/.env.local
+
 # Logs
 logs
 *.log

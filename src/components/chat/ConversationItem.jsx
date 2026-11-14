@@ -1,12 +1,18 @@
 import React from 'react';
 import { Avatar } from '../common/Avatar';
 import { formatConversationTime } from '../../utils/dateUtils';
-import { Check, CheckCheck } from 'lucide-react';
+import { Check, CheckCheck, Lock } from 'lucide-react';
 
 export const ConversationItem = ({ conversation, isActive, onClick, currentUserId }) => {
   const { participant, lastMessage, unreadCount } = conversation;
 
   const isOutgoing = lastMessage?.senderId === currentUserId;
+
+  // Never render ciphertext as the preview; show a placeholder instead
+  const isEncrypted = !!(lastMessage?.ciphertext && lastMessage?.nonce);
+  const previewText = lastMessage
+    ? (isEncrypted ? '🔐 Encrypted message' : (lastMessage.content || 'Message'))
+    : null;
 
   return (
     <div
@@ -45,7 +51,7 @@ export const ConversationItem = ({ conversation, isActive, onClick, currentUserI
 
         <div className="flex items-center justify-between gap-1">
           <div className="flex items-center gap-1.5 min-w-0 text-xs text-slate-500">
-            {isOutgoing && (
+            {isOutgoing && !isEncrypted && (
               <span className="flex-shrink-0 text-slate-400">
                 {lastMessage.read ? (
                   <CheckCheck className="w-3.5 h-3.5 text-indigo-500" />
@@ -54,8 +60,11 @@ export const ConversationItem = ({ conversation, isActive, onClick, currentUserI
                 )}
               </span>
             )}
+            {isEncrypted && (
+              <Lock className="w-3 h-3 flex-shrink-0 text-emerald-500" title="E2EE" />
+            )}
             <p className="truncate font-normal">
-              {lastMessage ? lastMessage.content : <span className="italic text-slate-400">No messages yet</span>}
+              {previewText ?? <span className="italic text-slate-400">No messages yet</span>}
             </p>
           </div>
 

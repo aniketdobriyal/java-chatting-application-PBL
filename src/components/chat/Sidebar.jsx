@@ -4,12 +4,14 @@ import { useChat } from '../../hooks/useChat';
 import { Avatar } from '../common/Avatar';
 import { ConversationList } from './ConversationList';
 import { UserSearch } from './UserSearch';
-import { Search, X, LogOut, MessageSquare, Filter } from 'lucide-react';
+import { ProfileModal } from './ProfileModal';
+import { Search, X, LogOut, Settings } from 'lucide-react';
 
 export const Sidebar = () => {
   const { user, logout } = useAuth();
   const { searchQuery, setSearchQuery, conversations } = useChat();
   const [filterTab, setFilterTab] = useState('all'); // 'all' | 'unread'
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
 
   const totalUnread = conversations.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
 
@@ -17,23 +19,44 @@ export const Sidebar = () => {
     <div className="flex flex-col h-full bg-white border-r border-slate-200/80">
       
       {/* 1. Header with Current User Info */}
-      <div className="p-4 bg-slate-50/80 border-b border-slate-200/80 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3 min-w-0">
-          <Avatar name={user?.name} src={user?.avatar} online={user?.online} size="md" />
-          <div className="min-w-0">
-            <h2 className="text-sm font-bold text-slate-900 truncate">{user?.name || 'User'}</h2>
-            <p className="text-xs text-slate-500 truncate">{user?.email}</p>
-          </div>
-        </div>
-
-        {/* Logout Action */}
+      <div className="p-3.5 bg-slate-50/80 border-b border-slate-200/80 flex items-center justify-between gap-3">
         <button
-          onClick={logout}
-          className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all cursor-pointer flex-shrink-0"
-          title="Sign Out"
+          type="button"
+          onClick={() => setIsProfileOpen(true)}
+          className="flex items-center gap-3 min-w-0 text-left hover:opacity-85 transition-opacity cursor-pointer group flex-1"
+          title="Click to view & edit Profile / Status"
         >
-          <LogOut className="w-4 h-4" />
+          <Avatar name={user?.name} src={user?.avatar} online={user?.online} size="md" />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5">
+              <h2 className="text-sm font-bold text-slate-900 truncate group-hover:text-indigo-600 transition-colors">
+                {user?.name || 'User'}
+              </h2>
+            </div>
+            <p className="text-xs text-slate-500 truncate">
+              {user?.statusMessage || user?.email}
+            </p>
+          </div>
         </button>
+
+        {/* Action Buttons: Settings & Logout */}
+        <div className="flex items-center gap-1 flex-shrink-0">
+          <button
+            onClick={() => setIsProfileOpen(true)}
+            className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all cursor-pointer"
+            title="Profile & Settings"
+          >
+            <Settings className="w-4 h-4" />
+          </button>
+
+          <button
+            onClick={logout}
+            className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all cursor-pointer"
+            title="Sign Out"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       {/* 2. User Search Bar */}
@@ -95,6 +118,12 @@ export const Sidebar = () => {
       <div className="flex-1 overflow-y-auto">
         {searchQuery ? <UserSearch /> : <ConversationList filter={filterTab} />}
       </div>
+
+      {/* Profile Settings Modal */}
+      <ProfileModal
+        isOpen={isProfileOpen}
+        onClose={() => setIsProfileOpen(false)}
+      />
 
     </div>
   );

@@ -1,0 +1,23 @@
+server:
+  port: ${PORT:8080}
+
+spring:
+  main:
+    allow-circular-references: true
+  application:
+    name: chat-backend
+  data:
+    mongodb:
+      uri: ${MONGODB_URI:mongodb://localhost:27017/chat_app}
+      database: ${MONGODB_DATABASE:chat_app}
+      auto-index-creation: true
+
+jwt:
+  secret: ${JWT_SECRET:404E635266556A586E3272357538782F413F4428472B4B6250655368566D5971}
+  expiration: ${JWT_EXPIRATION:86400000} # 24 Hours in milliseconds
+
+logging:
+  level:
+    root: INFO
+    com.saferoute.chat: DEBUG
+    org.springframework.data.mongodb.core.MongoTemplate: INFO

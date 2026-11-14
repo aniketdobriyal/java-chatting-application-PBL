@@ -1,7 +1,7 @@
 import React from 'react';
 import { useChat } from '../../hooks/useChat';
 import { Avatar } from '../common/Avatar';
-import { ArrowLeft, MoreVertical, Phone, Video, Search } from 'lucide-react';
+import { ArrowLeft, MoreVertical, Phone, Video, Search, Lock } from 'lucide-react';
 
 export const ChatHeader = () => {
   const { activeConversation, setMobileView } = useChat();
@@ -9,6 +9,7 @@ export const ChatHeader = () => {
   if (!activeConversation) return null;
 
   const { participant } = activeConversation;
+  const hasE2EE = !!participant?.publicKey;
 
   return (
     <div className="h-16 px-4 bg-white border-b border-slate-200/80 flex items-center justify-between gap-3 shadow-2xs">
@@ -31,7 +32,19 @@ export const ChatHeader = () => {
         />
 
         <div className="min-w-0">
-          <h2 className="text-sm font-bold text-slate-900 truncate">{participant.name}</h2>
+          <div className="flex items-center gap-1.5">
+            <h2 className="text-sm font-bold text-slate-900 truncate">{participant.name}</h2>
+            {/* E2EE badge — only shown when recipient has a registered public key */}
+            {hasE2EE && (
+              <span
+                className="flex items-center gap-0.5 px-1.5 py-0.5 bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-semibold rounded-full flex-shrink-0"
+                title="Messages in this conversation are end-to-end encrypted"
+              >
+                <Lock className="w-2.5 h-2.5" />
+                E2EE
+              </span>
+            )}
+          </div>
           <div className="flex items-center gap-1.5 text-xs text-slate-500">
             <span
               className={`w-2 h-2 rounded-full flex-shrink-0 ${
@@ -40,8 +53,8 @@ export const ChatHeader = () => {
             />
             <span className="truncate">
               {participant.online
-                ? 'Online'
-                : participant.statusMessage || 'Offline'}
+                ? (participant.statusMessage ? `Online • ${participant.statusMessage}` : 'Online')
+                : (participant.statusMessage ? `Offline • ${participant.statusMessage}` : 'Offline')}
             </span>
           </div>
         </div>

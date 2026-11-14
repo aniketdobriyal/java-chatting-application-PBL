@@ -1,8 +1,11 @@
 import React from 'react';
 import { formatMessageTime } from '../../utils/dateUtils';
-import { Check, CheckCheck } from 'lucide-react';
+import { Check, CheckCheck, Lock, AlertTriangle } from 'lucide-react';
 
 export const MessageBubble = ({ message, isOutgoing }) => {
+  const isE2EE = !!(message.ciphertext && message.nonce);
+  const decryptionFailed = isE2EE && !message.isDecrypted;
+
   return (
     <div className={`flex flex-col ${isOutgoing ? 'items-end' : 'items-start'} mb-3 group`}>
       <div
@@ -10,16 +13,31 @@ export const MessageBubble = ({ message, isOutgoing }) => {
           isOutgoing
             ? 'bg-indigo-600 text-white rounded-br-xs'
             : 'bg-white text-slate-800 border border-slate-200/80 rounded-bl-xs'
-        }`}
+        } ${decryptionFailed ? 'opacity-60' : ''}`}
       >
-        <p className="whitespace-pre-wrap break-words">{message.content}</p>
-        
-        {/* Footer Meta (Timestamp + Read status) */}
+        {/* Message Content */}
+        {decryptionFailed ? (
+          <p className="flex items-center gap-1.5 italic text-xs">
+            <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+            {message.content}
+          </p>
+        ) : (
+          <p className="whitespace-pre-wrap break-words">{message.content}</p>
+        )}
+
+        {/* Footer Meta (Timestamp + E2EE lock + Read status) */}
         <div
           className={`flex items-center justify-end gap-1.5 mt-1 text-[10px] select-none ${
             isOutgoing ? 'text-indigo-200' : 'text-slate-400'
           }`}
         >
+          {/* E2EE indicator — only shown when message is genuinely encrypted */}
+          {isE2EE && message.isDecrypted && (
+            <Lock
+              className={`w-3 h-3 flex-shrink-0 ${isOutgoing ? 'text-indigo-200' : 'text-emerald-500'}`}
+              title="End-to-end encrypted"
+            />
+          )}
           <span>{formatMessageTime(message.timestamp)}</span>
           {isOutgoing && (
             <span>

@@ -38,7 +38,9 @@ export const UserSearch = () => {
               <p className="text-sm font-semibold text-slate-800 truncate group-hover:text-indigo-600 transition-colors">
                 {user.name}
               </p>
-              <p className="text-xs text-slate-500 truncate">{user.email}</p>
+              <p className="text-xs text-slate-500 truncate">
+                {user.statusMessage || user.email}
+              </p>
             </div>
           </div>
           <button

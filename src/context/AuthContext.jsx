@@ -1,22 +1,17 @@
-import React, { createContext, useState, useEffect } from 'react';
+import React, { createContext, useState } from 'react';
 import { authService } from '../services/authService';
 
 export const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  useEffect(() => {
-    // Check initial session
+  // Initialize synchronously from localStorage to prevent flash and cascading renders
+  const [user, setUser] = useState(() => {
     const storedUser = authService.getCurrentUser();
     const token = localStorage.getItem('token');
-    if (storedUser && token) {
-      setUser(storedUser);
-    }
-    setIsLoading(false);
-  }, []);
+    return storedUser && token ? storedUser : null;
+  });
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState(null);
 
   const login = async (email, password) => {
     setIsLoading(true);
@@ -50,10 +45,21 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const logout = () => {
-    authService.logout();
-    setUser(null);
-    setError(null);
+  const logout = async () => {
+    try {
+      await authService.logout();
+    } finally {
+      setUser(null);
+      setError(null);
+    }
+  };
+
+  const updateCurrentUser = (updatedUser) => {
+    setUser((prev) => {
+      const merged = { ...prev, ...updatedUser };
+      localStorage.setItem('user', JSON.stringify(merged));
+      return merged;
+    });
   };
 
   const value = {
@@ -64,6 +70,7 @@ export const AuthProvider = ({ children }) => {
     login,
     register,
     logout,
+    updateCurrentUser,
     setError,
   };
 
