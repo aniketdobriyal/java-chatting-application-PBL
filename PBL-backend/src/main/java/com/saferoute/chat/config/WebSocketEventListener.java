@@ -57,8 +57,8 @@ public class WebSocketEventListener {
         }
 
         String sessionId = accessor.getSessionId();
-        if (sessionId == null) {
-            sessionId = event.getSessionId();
+        if (sessionId == null && event.getMessage() != null) {
+            sessionId = org.springframework.messaging.simp.SimpMessageHeaderAccessor.getSessionId(event.getMessage().getHeaders());
         }
 
         if (sessionId != null) {
