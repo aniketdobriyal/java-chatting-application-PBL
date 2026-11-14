@@ -395,9 +395,11 @@ export const ChatProvider = ({ children }) => {
     const token = localStorage.getItem('token');
     if (!token) return;
 
-    const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api';
+    const rawApiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api';
+    const cleanApiBase = rawApiBase.trim().replace(/\/+$/, '');
+    const apiBase = cleanApiBase.endsWith('/api') ? cleanApiBase : `${cleanApiBase}/api`;
     const wsUrl = apiBase
-      .replace('/api', '/ws')
+      .replace(/\/api$/, '/ws')
       .replace(/^http:\/\//, 'ws://')
       .replace(/^https:\/\//, 'wss://');
 
