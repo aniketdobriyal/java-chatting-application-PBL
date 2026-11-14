@@ -11,9 +11,9 @@ const ChatContent = () => {
   const { activeConversation, mobileView } = useChat();
 
   return (
-    <div className="h-screen w-screen overflow-hidden bg-slate-100 flex items-center justify-center p-0 md:">
+    <div className="h-full h-dvh w-full overflow-hidden bg-slate-100 flex items-center justify-center p-0 md:p-4">
       {/* Container Frame */}
-      <div className="h-full w-full  bg-white md:rounded-2xl md:shadow-2xl md:border border-slate-200/80 flex overflow-hidden">
+      <div className="h-full w-full max-w-7xl bg-white md:rounded-2xl md:shadow-2xl md:border border-slate-200/80 flex overflow-hidden">
         
         {/* Sidebar Column:
             - Desktop: Always visible (width: 340px to 380px)
@@ -21,7 +21,7 @@ const ChatContent = () => {
         */}
         <div
           className={`h-full w-full md:w-80 lg:w-96 flex-shrink-0 ${
-            mobileView === 'list' ? 'block' : 'hidden md:block'
+            mobileView === 'list' ? 'flex flex-col' : 'hidden md:flex md:flex-col'
           }`}
         >
           <Sidebar />
@@ -32,8 +32,8 @@ const ChatContent = () => {
             - Mobile: Visible only when mobileView === 'chat'
         */}
         <div
-          className={`h-full flex-1 flex flex-col bg-slate-50/50 ${
-            mobileView === 'chat' ? 'block' : 'hidden md:flex'
+          className={`h-full flex-1 flex flex-col bg-slate-50/50 min-w-0 ${
+            mobileView === 'chat' ? 'flex flex-col' : 'hidden md:flex'
           }`}
         >
           {activeConversation ? (

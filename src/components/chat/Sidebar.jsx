@@ -16,7 +16,7 @@ export const Sidebar = () => {
   const totalUnread = conversations.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
 
   return (
-    <div className="flex flex-col h-full bg-white border-r border-slate-200/80">
+    <div className="flex flex-col h-full bg-white border-r border-slate-200/80 w-full overflow-hidden">
       
       {/* 1. Header with Current User Info */}
       <div className="p-3.5 bg-slate-50/80 border-b border-slate-200/80 flex items-center justify-between gap-3">

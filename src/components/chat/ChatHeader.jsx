@@ -12,13 +12,13 @@ export const ChatHeader = () => {
   const hasE2EE = !!participant?.publicKey;
 
   return (
-    <div className="h-16 px-4 bg-white border-b border-slate-200/80 flex items-center justify-between gap-3 shadow-2xs">
+    <div className="h-14 sm:h-16 px-3 sm:px-4 bg-white border-b border-slate-200/80 flex items-center justify-between gap-2 sm:gap-3 shadow-2xs flex-shrink-0 w-full">
       
       {/* Left: Mobile Back Button & Participant Metadata */}
-      <div className="flex items-center gap-3 min-w-0">
+      <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
         <button
           onClick={() => setMobileView('list')}
-          className="md:hidden p-2 -ml-1 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+          className="md:hidden p-1.5 -ml-1 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer flex-shrink-0"
           aria-label="Back to conversations"
         >
           <ArrowLeft className="w-5 h-5" />
@@ -31,7 +31,7 @@ export const ChatHeader = () => {
           size="md"
         />
 
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
             <h2 className="text-sm font-bold text-slate-900 truncate">{participant.name}</h2>
             {/* E2EE badge — only shown when recipient has a registered public key */}
@@ -61,27 +61,27 @@ export const ChatHeader = () => {
       </div>
 
       {/* Right: Actions */}
-      <div className="flex items-center gap-1 text-slate-500">
+      <div className="flex items-center gap-0.5 sm:gap-1 text-slate-500 flex-shrink-0">
         <button
-          className="p-2 hover:bg-slate-100 hover:text-slate-700 rounded-xl transition-colors cursor-pointer"
+          className="hidden sm:flex p-2 hover:bg-slate-100 hover:text-slate-700 rounded-xl transition-colors cursor-pointer"
           title="Search in conversation"
         >
           <Search className="w-4 h-4" />
         </button>
         <button
-          className="p-2 hover:bg-slate-100 hover:text-slate-700 rounded-xl transition-colors cursor-pointer"
+          className="hidden sm:flex p-2 hover:bg-slate-100 hover:text-slate-700 rounded-xl transition-colors cursor-pointer"
           title="Voice Call (Demo)"
         >
           <Phone className="w-4 h-4" />
         </button>
         <button
-          className="p-2 hover:bg-slate-100 hover:text-slate-700 rounded-xl transition-colors cursor-pointer"
+          className="hidden sm:flex p-2 hover:bg-slate-100 hover:text-slate-700 rounded-xl transition-colors cursor-pointer"
           title="Video Call (Demo)"
         >
           <Video className="w-4 h-4" />
         </button>
         <button
-          className="p-2 hover:bg-slate-100 hover:text-slate-700 rounded-xl transition-colors cursor-pointer"
+          className="p-1.5 sm:p-2 hover:bg-slate-100 hover:text-slate-700 rounded-xl transition-colors cursor-pointer"
           title="More Options"
         >
           <MoreVertical className="w-4 h-4" />
